@@ -471,12 +471,26 @@ class Management implements LoggerAwareInterface
 
                             // Compare the MIC of the received message
                             $receivedMic = $bodyPayload->getHeaderLine('Received-Content-MIC');
-                            if ($receivedMic
-                                && $message->getMic()
-                                && Utils::normalizeMic($message->getMic()) !== Utils::normalizeMic($receivedMic)
-                            ) {
-                                throw new \RuntimeException(sprintf('The Message Integrity Code (MIC) does not match the sent AS2 message (required: %s, returned: %s)',
-                                    $message->getMic(), $receivedMic));
+                            if ($receivedMic && $message->getMic()) {
+                                $micParts = explode(',', $message->getMic(), 2);
+                                $signingAlgo = trim($micParts[1]);
+                                if (
+                                    // compare received MIC not only to the original one, but also to another one based on a payload with additional line break
+                                    // as it seems that some systems do that in a crappy fashion
+                                    //Utils::normalizeMic($message->getMic()) !== Utils::normalizeMic($receivedMic)
+                                    !in_array(Utils::normalizeMic($receivedMic), [
+                                        Utils::normalizeMic($message->getMic()),
+                                        Utils::normalizeMic(CryptoHelper::calculateMIC(Utils::canonicalize($message->getPayload() . "\n"), $signingAlgo))
+                                    ], true)
+                                ) {
+                                    throw new \RuntimeException(
+                                        sprintf(
+                                            'The Message Integrity Code (MIC) does not match the sent AS2 message (required: %s, returned: %s)',
+                                            $message->getMic(),
+                                            $receivedMic
+                                        )
+                                    );
+                                }
                             }
 
                             $message->setMdnStatus(MessageInterface::MDN_STATUS_RECEIVED);
